@@ -1,0 +1,44 @@
+# GoReleaser config for the runtz CLI.
+# Release flow (see RELEASING.md): tag vX.Y.Z[-rcN], then run:
+#   goreleaser release --clean
+# Requires GITHUB_TOKEN with write access to runtz-dev/runtz-cli.
+version: 2
+
+project_name: runtz
+
+builds:
+  - id: runtz
+    dir: .
+    main: ./cmd/runtz
+    binary: runtz
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/runtz-dev/runtz-cli/internal/version.Version={{ .Version }}
+
+# Publish raw binaries named exactly as install.sh expects:
+#   runtz_<os>_<arch>  (e.g. runtz_linux_amd64)
+archives:
+  - id: binaries
+    formats: [binary]
+    name_template: "runtz_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github-native
+
+release:
+  github:
+    owner: runtz-dev
+    name: runtz-cli
+  draft: false
+  prerelease: auto

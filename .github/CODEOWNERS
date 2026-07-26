@@ -1,0 +1,10 @@
+# Default owners. Pull requests require review from the runtz core team before
+# merging into develop or main.
+*                          @runtz-dev/core
+
+# Release plumbing and the exit-code / gate contract get extra scrutiny.
+/.github/                  @runtz-dev/core
+/.goreleaser.yaml          @runtz-dev/core
+/install.sh                @runtz-dev/core
+/internal/gate/            @runtz-dev/core
+/internal/update/          @runtz-dev/core
