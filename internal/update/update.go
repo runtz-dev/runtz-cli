@@ -167,7 +167,7 @@ func replaceExecutable(newData []byte, stdout io.Writer) error {
 
 func permissionHint(dir string, err error) error {
 	if errors.Is(err, os.ErrPermission) {
-		return fmt.Errorf("%w\nno write access to %s; re-run with sudo or set RUNTZ_INSTALL_DIR and reinstall via https://get.runtz.dev", err, dir)
+		return fmt.Errorf("%w\nno write access to %s; re-run with sudo or set RUNTZ_INSTALL_DIR and reinstall via https://runtz.dev/install.sh", err, dir)
 	}
 	return err
 }
