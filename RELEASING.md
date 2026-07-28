@@ -26,14 +26,14 @@ Publishing the release triggers `release.yml`:
 
 - **binaries** — GoReleaser builds `runtz_{linux,darwin}_{amd64,arm64}` +
   `checksums.txt` and attaches them to the GitHub Release (prerelease auto-detected
-  from the `-rc` suffix). The installer (`curl -fsSL https://get.runtz.dev | bash`)
+  from the `-rc` suffix). The installer (`curl -fsSL https://runtz.dev/install.sh | bash`)
   and `runtz update` consume these assets.
 - **image** — builds and pushes `runtzdev/runtz-cli:<version>` (and `:latest`
   for stable versions).
 
 ## 2. After the release
 
-- Verify: `curl -fsSL https://get.runtz.dev | bash && runtz version`.
+- Verify: `curl -fsSL https://runtz.dev/install.sh | bash && runtz version`.
 - Verify: `runtz update --check` on the previous version reports the new one.
 - Verify: `docker run --rm runtzdev/runtz-cli:$(cat VERSION) version`.
 

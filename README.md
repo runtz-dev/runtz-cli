@@ -16,7 +16,7 @@ your runtz engine (self-hosted or the SaaS at `https://engine.runtz.dev`).
 ## Install
 
 ```bash
-curl -fsSL https://get.runtz.dev | bash
+curl -fsSL https://runtz.dev/install.sh | bash
 runtz version
 ```
 
