@@ -69,8 +69,12 @@ fi
 # GitHub's "latest" only covers stable releases. While runtz ships release
 # candidates (1.0.0-rcN), fall back to the newest release, prereleases included.
 resolve_newest_tag() {
+  # per_page=1 already limits the response to one release, so plain grep
+  # (not -m1) returns the same single match without closing the pipe early —
+  # `grep -m1` here would SIGPIPE curl mid-write and, combined with
+  # pipefail, kill the whole script even though the tag was found.
   curl -fsSL --proto '=https' "https://api.github.com/repos/${REPO}/releases?per_page=1" 2>/dev/null |
-    grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/'
+    grep '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/'
 }
 
 # fetch retries once on a transient network failure before giving up.
@@ -115,8 +119,15 @@ fi
 chmod +x "${TMP_DIR}/${BINARY}"
 
 info "Installing to ${INSTALL_DIR}/${BINARY}..."
-if [ -w "$INSTALL_DIR" ] || [ "$(id -u)" = "0" ]; then
+# mkdir -p is a no-op on an existing dir, so following it with -w correctly
+# covers all four cases: dir missing with a writable parent (creates it, no
+# sudo), dir missing with a root-owned parent (mkdir fails, use sudo), dir
+# present and writable (no sudo), dir present but root-owned (mkdir no-ops,
+# -w catches it, use sudo).
+if [ "$(id -u)" = "0" ]; then
   mkdir -p "$INSTALL_DIR"
+  mv "${TMP_DIR}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
+elif mkdir -p "$INSTALL_DIR" 2>/dev/null && [ -w "$INSTALL_DIR" ]; then
   mv "${TMP_DIR}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
 else
   command_exists sudo || fail "no write access to ${INSTALL_DIR} and sudo is not available; set RUNTZ_INSTALL_DIR to a writable directory"
