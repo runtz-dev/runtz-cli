@@ -55,6 +55,7 @@ const (
 	familyRPM    packageFamily = "rpm"
 	familyAPK    packageFamily = "apk"
 	familyPacman packageFamily = "pacman"
+	familyBrew   packageFamily = "brew"
 )
 
 // familyForOS resolves the package database family from os-release. The ID is

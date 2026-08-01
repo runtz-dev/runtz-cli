@@ -5,9 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 func RunHost(ctx context.Context, options HostOptions) (Result, error) {
+	if runtime.GOOS == "darwin" {
+		return runHostDarwin(ctx, options)
+	}
+
 	root := options.TargetRoot
 	if root == "" {
 		root = "/"

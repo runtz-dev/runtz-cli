@@ -98,7 +98,7 @@ func runSCA(args []string) error {
 	if help, err := parseFlags(flags, args); help || err != nil {
 		return err
 	}
-	if err := requireAuth(auth); err != nil {
+	if err := requireAuth(&auth); err != nil {
 		return err
 	}
 
@@ -144,7 +144,7 @@ func runSAST(args []string) error {
 	if help, err := parseFlags(flags, args); help || err != nil {
 		return err
 	}
-	if err := requireAuth(auth); err != nil {
+	if err := requireAuth(&auth); err != nil {
 		return err
 	}
 
@@ -188,7 +188,7 @@ func runHost(args []string) error {
 	if help, err := parseFlags(flags, args); help || err != nil {
 		return err
 	}
-	if err := requireAuth(auth); err != nil {
+	if err := requireAuth(&auth); err != nil {
 		return err
 	}
 
@@ -231,7 +231,7 @@ func runContainer(args []string) error {
 	if help, err := parseFlags(flags, args); help || err != nil {
 		return err
 	}
-	if err := requireAuth(auth); err != nil {
+	if err := requireAuth(&auth); err != nil {
 		return err
 	}
 
@@ -284,7 +284,7 @@ func runKubernetes(args []string) error {
 	if help, err := parseFlags(flags, args); help || err != nil {
 		return err
 	}
-	if err := requireAuth(auth); err != nil {
+	if err := requireAuth(&auth); err != nil {
 		return err
 	}
 
@@ -365,9 +365,12 @@ func addAuthFlags(flags *flag.FlagSet, auth *authOptions) {
 	flags.StringVar(&auth.Token, "token", envOrDefault("RUNTZ_TOKEN", os.Getenv("RUNTZ_API_KEY")), "Runtz token generated in the platform")
 }
 
-func requireAuth(auth authOptions) error {
+// requireAuth defaults Endpoint to the Runtz SaaS backend when the caller
+// didn't pass --endpoint, so it's only ever needed for self-hosted
+// deployments. Token has no sensible default and stays required.
+func requireAuth(auth *authOptions) error {
 	if auth.Endpoint == "" {
-		return fmt.Errorf("--endpoint is required (use %s for Runtz SaaS)", saasEndpoint)
+		auth.Endpoint = saasEndpoint
 	}
 	if auth.Token == "" {
 		return fmt.Errorf("--token is required")
@@ -547,15 +550,16 @@ Commands:
   sca          Scan dependency manifests in a repository or a single manifest file
   sast         Scan source code with initial static rules
   container    Scan packages inside a container image
-  host         Scan packages installed on a Linux host/rootfs
+  host         Scan packages installed on this Linux or macOS host
   k8s          Scan a Kubernetes cluster or manifests
   kubernetes   Alias for k8s
   update       Update the CLI to the latest release
   version      Print the CLI version
 
 Required on every scan command:
-  --endpoint   Runtz backend endpoint, for SaaS use %s
   --token      Token generated in the Runtz platform
+  --endpoint   Runtz backend endpoint (optional, defaults to Runtz SaaS: %s;
+               only needed for self-hosted deployments)
 
 Severity gates (optional, on every scan command) — fail with exit code 3 when
 the number of findings at a severity reaches N, to break a CI/CD pipeline:
@@ -603,8 +607,8 @@ func scaHelp() {
   runtz sca (REPO_PATH | FILE_PATH) [flags]
 
 Examples:
-  runtz sca ./ --endpoint %s --token rtz_live_...
-  runtz sca ./package.json --endpoint %s --token rtz_live_...
+  runtz sca ./ --token rtz_live_...
+  runtz sca ./package.json --endpoint http://localhost:8080 --token rtz_live_...
 
 Scanning a repository path discovers every supported dependency manifest:
   %s
@@ -616,13 +620,14 @@ Flags:
   --project        Project name override
   --source         Project source path, repository or URL
   --github-token   Optional GitHub token for higher advisory API limits
-  --endpoint       Runtz backend endpoint (required)
   --token          Token generated in the Runtz platform (required)
+  --endpoint       Runtz backend endpoint (optional, defaults to Runtz SaaS: %s;
+                   only needed for self-hosted deployments)
   --*-threshold N  Severity gates: fail (exit 3) at N critical/high/medium/low findings
 
 Environment:
   RUNTZ_PROJECT, RUNTZ_SOURCE, GITHUB_TOKEN, RUNTZ_ENDPOINT, RUNTZ_TOKEN
-`, saasEndpoint, saasEndpoint, strings.Join(sca.SupportedManifests, ", "))
+`, strings.Join(sca.SupportedManifests, ", "), saasEndpoint)
 }
 
 func sastHelp() {
@@ -630,8 +635,8 @@ func sastHelp() {
   runtz sast (REPO_PATH | FILE_PATH) [flags]
 
 Examples:
-  runtz sast ./ --endpoint %s --token rtz_live_...
-  runtz sast ./src/server.ts --endpoint %s --token rtz_live_...
+  runtz sast ./ --token rtz_live_...
+  runtz sast ./src/server.ts --endpoint http://localhost:8080 --token rtz_live_...
 
 Initial SAST rules detect common high-signal issues such as committed secrets,
 dynamic code execution, disabled TLS verification and weak hash usage in
@@ -641,35 +646,41 @@ source files.
 Flags:
   --project    Project name override
   --source     Project source path, repository or URL
-  --endpoint   Runtz backend endpoint (required)
   --token      Token generated in the Runtz platform (required)
+  --endpoint   Runtz backend endpoint (optional, defaults to Runtz SaaS: %s;
+               only needed for self-hosted deployments)
   --*-threshold N  Severity gates: fail (exit 3) at N critical/high/medium/low findings
 
 Environment:
   RUNTZ_PROJECT, RUNTZ_SOURCE, RUNTZ_ENDPOINT, RUNTZ_TOKEN
-`, saasEndpoint, saasEndpoint)
+`, saasEndpoint)
 }
 
 func hostHelp() {
 	fmt.Fprintf(os.Stderr, `Usage:
-  runtz host --endpoint %s --token rtz_live_...
+  runtz host --token rtz_live_...
 
-The host scanner always inventories the current host: it reads /etc/os-release,
-detects the distribution family and lists installed packages from the matching
-package database, then queries OSV for package CVEs.
+The host scanner always inventories the current host. On Linux it reads
+/etc/os-release, detects the distribution family and lists installed packages
+from the matching package database, then queries OSV for package CVEs. On
+macOS it reads the OS version via sw_vers and lists installed Homebrew
+formulae and casks (OSV has no advisory feed for Homebrew yet, so the
+inventory is sent without CVE matching).
 
 Supported families:
   Debian/Ubuntu based   dpkg    (Debian, Ubuntu, Mint, ...)
   RPM based             rpm     (RHEL, CentOS, Rocky, Alma, openSUSE, SLES, ...)
   Alpine based          apk     (Alpine, ...)
   Arch based            pacman  (Arch, Manjaro, ...; inventory only for now)
+  macOS                 brew    (Homebrew formulae and casks; inventory only)
 
 Flags:
   --hostname   Hostname shown in the Hosts dashboard (default: local hostname)
-  --rootfs     Root filesystem to scan when not / (advanced)
+  --rootfs     Root filesystem to scan when not / (advanced, Linux only)
   --osv-url    Optional OSV API base URL
-  --endpoint   Runtz backend endpoint (required)
   --token      Token generated in the Runtz platform (required)
+  --endpoint   Runtz backend endpoint (optional, defaults to Runtz SaaS: %s;
+               only needed for self-hosted deployments)
   --*-threshold N  Severity gates: fail (exit 3) at N critical/high/medium/low findings
 
 Environment:
@@ -682,9 +693,9 @@ func containerHelp() {
   runtz container IMAGE [flags]
 
 Examples:
-  runtz container ubuntu:22.04 --endpoint %s --token rtz_live_...
-  runtz container alpine:3.19 --endpoint %s --token rtz_live_...
-  runtz container my-app:latest --local --endpoint %s --token rtz_live_...
+  runtz container ubuntu:22.04 --token rtz_live_...
+  runtz container alpine:3.19 --token rtz_live_...
+  runtz container my-app:latest --local --token rtz_live_...
 
 The container scanner pulls the image from a registry by default (no Docker
 needed), reads its layers directly and inventories the OS package database.
@@ -699,13 +710,14 @@ Supported image families:
 Flags:
   --local      Read image from the local Docker daemon
   --osv-url    Optional OSV API base URL
-  --endpoint   Runtz backend endpoint (required)
   --token      Token generated in the Runtz platform (required)
+  --endpoint   Runtz backend endpoint (optional, defaults to Runtz SaaS: %s;
+               only needed for self-hosted deployments)
   --*-threshold N  Severity gates: fail (exit 3) at N critical/high/medium/low findings
 
 Environment:
   RUNTZ_CONTAINER_IMAGE, RUNTZ_CONTAINER_LOCAL, RUNTZ_OSV_URL, RUNTZ_ENDPOINT, RUNTZ_TOKEN
-`, saasEndpoint, saasEndpoint, saasEndpoint)
+`, saasEndpoint)
 }
 
 func k8sHelp() {
@@ -713,10 +725,10 @@ func k8sHelp() {
   runtz k8s [MANIFEST_PATH] [flags]
 
 Examples:
-  runtz k8s --endpoint %s --token rtz_live_...
-  runtz k8s --kubeconfig ~/.kube/config2 --endpoint %s --token rtz_live_...
-  runtz k8s --context production --namespace payments --endpoint %s --token rtz_live_...
-  runtz k8s ./deploy --endpoint %s --token rtz_live_...
+  runtz k8s --token rtz_live_...
+  runtz k8s --kubeconfig ~/.kube/config2 --token rtz_live_...
+  runtz k8s --context production --namespace payments --token rtz_live_...
+  runtz k8s ./deploy --token rtz_live_...
 
 By default the Kubernetes scanner reads the currently connected cluster through
 kubectl (the active kubeconfig context). Pass a manifest file or directory as
@@ -734,13 +746,14 @@ Flags:
   --kubectl          kubectl binary path (default: kubectl)
   --target           Target name shown in the platform
   --source           Scan source label, repository or URL
-  --endpoint         Runtz backend endpoint (required)
   --token            Token generated in the Runtz platform (required)
+  --endpoint         Runtz backend endpoint (optional, defaults to Runtz SaaS: %s;
+                     only needed for self-hosted deployments)
   --*-threshold N  Severity gates: fail (exit 3) at N critical/high/medium/low findings
 
 Environment:
   RUNTZ_KUBECTL, KUBECONFIG, RUNTZ_K8S_CONTEXT, RUNTZ_K8S_NAMESPACE,
   RUNTZ_K8S_ALL_NAMESPACES, RUNTZ_K8S_TARGET,
   RUNTZ_SOURCE, RUNTZ_ENDPOINT, RUNTZ_TOKEN
-`, saasEndpoint, saasEndpoint, saasEndpoint, saasEndpoint)
+`, saasEndpoint)
 }
