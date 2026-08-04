@@ -148,9 +148,6 @@ func (c *Client) send(ctx context.Context, path string, payload any) (string, er
 	if c.token != "" {
 		request.Header.Set("Authorization", "Bearer "+c.token)
 	}
-	if c.token != "" && !strings.HasPrefix(c.token, "rtz_") {
-		request.Header.Set("X-Runtz-Token", c.token)
-	}
 
 	response, err := c.httpClient.Do(request)
 	if err != nil {
