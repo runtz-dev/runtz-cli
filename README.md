@@ -38,17 +38,41 @@ runtz update --yes    # no prompt (automation)
 runtz update --check  # only report if a newer version exists (exit 3 if so)
 ```
 
-## Scans
+## Log in once
 
-Every scan needs an engine endpoint and a workspace token (from the platform):
+`runtz login` verifies a workspace token (generated in the platform) and stores
+it in `~/.config/runtz/config.json` (0600), so scan commands no longer need
+`--token`:
 
 ```bash
-runtz sca ./                 --endpoint https://engine.runtz.dev --token rtz_live_...
-runtz sast ./                --endpoint https://engine.runtz.dev --token rtz_live_...
-runtz host                   --endpoint https://engine.runtz.dev --token rtz_live_...
-runtz container ubuntu:22.04 --endpoint https://engine.runtz.dev --token rtz_live_...
-runtz k8s                    --endpoint https://engine.runtz.dev --token rtz_live_...
+runtz login                                  # paste the token at a hidden prompt
+runtz login --token rtz_live_...             # non-interactive
+runtz login --endpoint http://localhost:8080 # self-hosted: endpoint is stored too
+runtz whoami                                 # workspace + where the token comes from
+runtz logout                                 # remove the stored token
 ```
+
+The token is resolved in this order — an explicit flag or environment variable
+(the CI/CD path) always beats the stored login:
+
+1. `--token` flag
+2. `RUNTZ_TOKEN` environment variable
+3. `runtz login` stored token
+
+## Scans
+
+After `runtz login` (or with `RUNTZ_TOKEN` set), scans are just:
+
+```bash
+runtz sca ./
+runtz sast ./
+runtz host
+runtz container ubuntu:22.04
+runtz k8s
+```
+
+`--endpoint` defaults to the Runtz SaaS backend; pass it (or store it via
+`runtz login --endpoint ...`) only for self-hosted deployments.
 
 - **sca** — dependency manifests (JavaScript/TypeScript, Python, Go, Java/Kotlin,
   Ruby, PHP, Rust, C#/.NET) against GitHub Global Security Advisories.
@@ -60,6 +84,9 @@ runtz k8s                    --endpoint https://engine.runtz.dev --token rtz_liv
 
 `--endpoint`/`--token` also read from `RUNTZ_ENDPOINT`/`RUNTZ_TOKEN`. Run
 `runtz help <command>` for the full flag and environment reference.
+
+In CI/CD, skip `runtz login` and pass the token from a secret instead —
+`--token "$RUNTZ_TOKEN"` or just export `RUNTZ_TOKEN`.
 
 ## CI/CD severity gates
 
