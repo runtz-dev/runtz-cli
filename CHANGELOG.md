@@ -2,6 +2,34 @@
 
 All notable changes to the runtz CLI are documented here. Versions follow
 `1.0.0-rc1 → 1.0.0-rc2 → ... → 1.0.0`, then regular semver.
+(Releases rc4–rc7 were tagged without changelog entries; see the GitHub
+release notes for those.)
+
+## [1.0.0-rc8]
+
+### Added
+
+- `runtz login` — verifies a workspace token against the platform
+  (`GET /api/v1/keys/verify`, runtz ≥ 1.0.0-rc12) and stores it in
+  `os.UserConfigDir()/runtz/config.json` (dir `0700`, file `0600`), so scan
+  commands no longer need `--token`. A self-hosted `--endpoint` is stored
+  alongside the token and kept across logout/re-login. Reads the token from
+  a hidden prompt on a TTY, from stdin when piped, or from `--token`.
+- `runtz logout` — removes the stored token (keeps a stored self-hosted
+  endpoint) and warns when `RUNTZ_TOKEN` is still set in the environment.
+- `runtz whoami` — shows the workspace, key name/prefix/expiry, endpoint and
+  where the current token comes from (flag, environment or stored login).
+- `RUNTZ_CONFIG_DIR` overrides the config directory.
+
+### Changed
+
+- Scan commands resolve credentials as `--token` > `RUNTZ_TOKEN` (or the
+  deprecated `RUNTZ_API_KEY`) > stored login, so CI keeps passing secrets
+  explicitly while interactive use is just `runtz host`.
+- The no-token error now points to the fix:
+  `no token configured: run 'runtz login', pass --token, or set RUNTZ_TOKEN`.
+- `runtz <cmd> --help` no longer echoes a token set in the environment as
+  the `--token` flag default.
 
 ## [1.0.0-rc3]
 
