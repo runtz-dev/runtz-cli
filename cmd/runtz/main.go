@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/runtz-dev/runtz-cli/internal/config"
 	"github.com/runtz-dev/runtz-cli/internal/gate"
 	"github.com/runtz-dev/runtz-cli/internal/k8s"
 	"github.com/runtz-dev/runtz-cli/internal/pkgscan"
@@ -56,6 +57,13 @@ func main() {
 	case "k8s", "kubernetes":
 		printBanner()
 		err = runKubernetes(os.Args[2:])
+	case "login":
+		printBanner()
+		err = runLogin(os.Args[2:])
+	case "logout":
+		err = runLogout(os.Args[2:])
+	case "whoami":
+		err = runWhoami(os.Args[2:])
 	case "update", "upgrade", "self-update":
 		err = runUpdate(os.Args[2:])
 	case "version", "--version", "-v":
@@ -361,19 +369,64 @@ func parseFlags(flags *flag.FlagSet, args []string) (bool, error) {
 }
 
 func addAuthFlags(flags *flag.FlagSet, auth *authOptions) {
-	flags.StringVar(&auth.Endpoint, "endpoint", os.Getenv("RUNTZ_ENDPOINT"), "Runtz backend endpoint")
-	flags.StringVar(&auth.Token, "token", envOrDefault("RUNTZ_TOKEN", os.Getenv("RUNTZ_API_KEY")), "Runtz token generated in the platform")
+	flags.StringVar(&auth.Endpoint, "endpoint", "", "Runtz backend endpoint")
+	flags.StringVar(&auth.Token, "token", "", "Runtz token generated in the platform")
 }
 
-// requireAuth defaults Endpoint to the Runtz SaaS backend when the caller
-// didn't pass --endpoint, so it's only ever needed for self-hosted
-// deployments. Token has no sensible default and stays required.
-func requireAuth(auth *authOptions) error {
+// resolveAuth fills the endpoint and token from, in order: the explicit flag,
+// the environment, then the config file written by `runtz login`. It reports
+// where the token came from for `runtz whoami`. Endpoint defaults to the
+// Runtz SaaS backend, so --endpoint is only ever needed for self-hosted
+// deployments.
+func resolveAuth(auth *authOptions) (string, error) {
+	source := ""
+	if auth.Token != "" {
+		source = "--token flag"
+	} else if value := envOrDefault("RUNTZ_TOKEN", os.Getenv("RUNTZ_API_KEY")); value != "" {
+		auth.Token = value
+		source = "RUNTZ_TOKEN environment variable"
+	}
+	if auth.Endpoint == "" {
+		auth.Endpoint = os.Getenv("RUNTZ_ENDPOINT")
+	}
+
+	if auth.Token == "" || auth.Endpoint == "" {
+		cfg, err := config.Load()
+		if err != nil {
+			// A broken config file must not block a scan that brought its own
+			// token; it only matters when we depend on it for the token.
+			if auth.Token == "" {
+				return "", err
+			}
+			fmt.Fprintf(os.Stderr, "warning: ignoring unreadable runtz config: %v\n", err)
+			cfg = config.Config{}
+		}
+		if auth.Token == "" && cfg.Token != "" {
+			auth.Token = cfg.Token
+			path, pathErr := config.Path()
+			if pathErr != nil {
+				path = "config file"
+			}
+			source = fmt.Sprintf("stored login (%s)", path)
+		}
+		if auth.Endpoint == "" {
+			auth.Endpoint = cfg.Endpoint
+		}
+	}
 	if auth.Endpoint == "" {
 		auth.Endpoint = saasEndpoint
 	}
+	return source, nil
+}
+
+// requireAuth resolves credentials for a scan command and fails with a
+// pointer to `runtz login` when no token is configured anywhere.
+func requireAuth(auth *authOptions) error {
+	if _, err := resolveAuth(auth); err != nil {
+		return err
+	}
 	if auth.Token == "" {
-		return fmt.Errorf("--token is required")
+		return fmt.Errorf("no token configured: run `runtz login`, pass --token, or set RUNTZ_TOKEN")
 	}
 	return nil
 }
@@ -473,6 +526,12 @@ func showCommandHelp(command string) error {
 		containerHelp()
 	case "k8s", "kubernetes":
 		k8sHelp()
+	case "login":
+		loginHelp()
+	case "logout":
+		logoutHelp()
+	case "whoami":
+		whoamiHelp()
 	case "update", "upgrade", "self-update":
 		updateHelp()
 	default:
@@ -553,11 +612,16 @@ Commands:
   host         Scan packages installed on this Linux or macOS host
   k8s          Scan a Kubernetes cluster or manifests
   kubernetes   Alias for k8s
+  login        Store a platform token so scans no longer need --token
+  logout       Remove the stored token
+  whoami       Show the workspace and source of the current token
   update       Update the CLI to the latest release
   version      Print the CLI version
 
-Required on every scan command:
+Authentication, on every scan command (resolved in this order):
   --token      Token generated in the Runtz platform
+  RUNTZ_TOKEN  Token from the environment (CI/CD secrets)
+  runtz login  Token stored once in the user config file
   --endpoint   Runtz backend endpoint (optional, defaults to Runtz SaaS: %s;
                only needed for self-hosted deployments)
 
@@ -574,6 +638,7 @@ Environment:
   RUNTZ_ENDPOINT       Backend endpoint
   RUNTZ_TOKEN          Platform token generated for the workspace
   RUNTZ_API_KEY        Deprecated alias for RUNTZ_TOKEN
+  RUNTZ_CONFIG_DIR     Overrides the directory of the runtz login config file
   RUNTZ_CRITICAL_THRESHOLD, RUNTZ_HIGH_THRESHOLD,
   RUNTZ_MEDIUM_THRESHOLD, RUNTZ_LOW_THRESHOLD
 `, saasEndpoint)
@@ -607,8 +672,9 @@ func scaHelp() {
   runtz sca (REPO_PATH | FILE_PATH) [flags]
 
 Examples:
-  runtz sca ./ --token rtz_live_...
-  runtz sca ./package.json --endpoint http://localhost:8080 --token rtz_live_...
+  runtz sca ./                          # token stored by runtz login
+  runtz sca ./ --token rtz_live_...     # explicit token (CI/CD)
+  runtz sca ./package.json --endpoint http://localhost:8080
 
 Scanning a repository path discovers every supported dependency manifest:
   %s
@@ -620,7 +686,7 @@ Flags:
   --project        Project name override
   --source         Project source path, repository or URL
   --github-token   Optional GitHub token for higher advisory API limits
-  --token          Token generated in the Runtz platform (required)
+  --token          Token generated in the Runtz platform (optional after runtz login)
   --endpoint       Runtz backend endpoint (optional, defaults to Runtz SaaS: %s;
                    only needed for self-hosted deployments)
   --*-threshold N  Severity gates: fail (exit 3) at N critical/high/medium/low findings
@@ -635,8 +701,9 @@ func sastHelp() {
   runtz sast (REPO_PATH | FILE_PATH) [flags]
 
 Examples:
-  runtz sast ./ --token rtz_live_...
-  runtz sast ./src/server.ts --endpoint http://localhost:8080 --token rtz_live_...
+  runtz sast ./                         # token stored by runtz login
+  runtz sast ./ --token rtz_live_...    # explicit token (CI/CD)
+  runtz sast ./src/server.ts --endpoint http://localhost:8080
 
 Initial SAST rules detect common high-signal issues such as committed secrets,
 dynamic code execution, disabled TLS verification and weak hash usage in
@@ -646,7 +713,7 @@ source files.
 Flags:
   --project    Project name override
   --source     Project source path, repository or URL
-  --token      Token generated in the Runtz platform (required)
+  --token      Token generated in the Runtz platform (optional after runtz login)
   --endpoint   Runtz backend endpoint (optional, defaults to Runtz SaaS: %s;
                only needed for self-hosted deployments)
   --*-threshold N  Severity gates: fail (exit 3) at N critical/high/medium/low findings
@@ -658,7 +725,11 @@ Environment:
 
 func hostHelp() {
 	fmt.Fprintf(os.Stderr, `Usage:
-  runtz host --token rtz_live_...
+  runtz host [flags]
+
+Examples:
+  runtz host                            # token stored by runtz login
+  runtz host --token rtz_live_...       # explicit token (CI/CD)
 
 The host scanner always inventories the current host. On Linux it reads
 /etc/os-release, detects the distribution family and lists installed packages
@@ -678,7 +749,7 @@ Flags:
   --hostname   Hostname shown in the Hosts dashboard (default: local hostname)
   --rootfs     Root filesystem to scan when not / (advanced, Linux only)
   --osv-url    Optional OSV API base URL
-  --token      Token generated in the Runtz platform (required)
+  --token      Token generated in the Runtz platform (optional after runtz login)
   --endpoint   Runtz backend endpoint (optional, defaults to Runtz SaaS: %s;
                only needed for self-hosted deployments)
   --*-threshold N  Severity gates: fail (exit 3) at N critical/high/medium/low findings
@@ -693,9 +764,9 @@ func containerHelp() {
   runtz container IMAGE [flags]
 
 Examples:
-  runtz container ubuntu:22.04 --token rtz_live_...
+  runtz container ubuntu:22.04              # token stored by runtz login
   runtz container alpine:3.19 --token rtz_live_...
-  runtz container my-app:latest --local --token rtz_live_...
+  runtz container my-app:latest --local
 
 The container scanner pulls the image from a registry by default (no Docker
 needed), reads its layers directly and inventories the OS package database.
@@ -710,7 +781,7 @@ Supported image families:
 Flags:
   --local      Read image from the local Docker daemon
   --osv-url    Optional OSV API base URL
-  --token      Token generated in the Runtz platform (required)
+  --token      Token generated in the Runtz platform (optional after runtz login)
   --endpoint   Runtz backend endpoint (optional, defaults to Runtz SaaS: %s;
                only needed for self-hosted deployments)
   --*-threshold N  Severity gates: fail (exit 3) at N critical/high/medium/low findings
@@ -725,9 +796,9 @@ func k8sHelp() {
   runtz k8s [MANIFEST_PATH] [flags]
 
 Examples:
-  runtz k8s --token rtz_live_...
-  runtz k8s --kubeconfig ~/.kube/config2 --token rtz_live_...
-  runtz k8s --context production --namespace payments --token rtz_live_...
+  runtz k8s                             # token stored by runtz login
+  runtz k8s --kubeconfig ~/.kube/config2
+  runtz k8s --context production --namespace payments
   runtz k8s ./deploy --token rtz_live_...
 
 By default the Kubernetes scanner reads the currently connected cluster through
@@ -746,7 +817,7 @@ Flags:
   --kubectl          kubectl binary path (default: kubectl)
   --target           Target name shown in the platform
   --source           Scan source label, repository or URL
-  --token            Token generated in the Runtz platform (required)
+  --token            Token generated in the Runtz platform (optional after runtz login)
   --endpoint         Runtz backend endpoint (optional, defaults to Runtz SaaS: %s;
                      only needed for self-hosted deployments)
   --*-threshold N  Severity gates: fail (exit 3) at N critical/high/medium/low findings
