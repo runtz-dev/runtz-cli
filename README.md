@@ -20,8 +20,16 @@ curl -fsSL https://runtz.dev/install.sh | bash
 runtz version
 ```
 
+Windows:
+
+```powershell
+irm https://runtz.dev/install.ps1 | iex
+runtz version
+```
+
 Or download a binary from the [releases page](https://github.com/runtz-dev/runtz-cli/releases)
-(`runtz_<os>_<arch>` for linux/darwin, amd64/arm64), or run the Docker image:
+(`runtz_<os>_<arch>` for linux/darwin, amd64/arm64, plus `runtz_windows_amd64.exe`),
+or run the Docker image:
 
 ```bash
 docker run --rm runtzdev/runtz-cli:latest --help

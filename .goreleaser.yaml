@@ -16,15 +16,22 @@ builds:
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64
+    ignore:
+      # Windows/arm64 is niche enough to skip for now; add it back here
+      # if it's ever needed.
+      - goos: windows
+        goarch: arm64
     ldflags:
       - -s -w
       - -X github.com/runtz-dev/runtz-cli/internal/version.Version={{ .Version }}
 
-# Publish raw binaries named exactly as install.sh expects:
-#   runtz_<os>_<arch>  (e.g. runtz_linux_amd64)
+# Publish raw binaries named exactly as install.sh/install.ps1 expect:
+#   runtz_<os>_<arch>       (e.g. runtz_linux_amd64)
+#   runtz_windows_amd64.exe (GoReleaser appends .exe for windows automatically)
 archives:
   - id: binaries
     formats: [binary]
