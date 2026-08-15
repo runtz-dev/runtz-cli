@@ -7,6 +7,14 @@ release notes for those.)
 
 ## [Unreleased]
 
+## [1.0.0-rc11]
+
+### Added
+
+- `runtz whoami --json` prints a stable, machine-readable authentication status
+  for integrations such as the Runtz VS Code extension. When no token is
+  configured it reports `authenticated: false` without failing.
+
 ## [1.0.0-rc10]
 
 ### Fixed

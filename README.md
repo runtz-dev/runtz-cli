@@ -57,6 +57,7 @@ runtz login                                  # paste the token at a hidden promp
 runtz login --token rtz_live_...             # non-interactive
 runtz login --endpoint http://localhost:8080 # self-hosted: endpoint is stored too
 runtz whoami                                 # workspace + where the token comes from
+runtz whoami --json                          # machine-readable integration status
 runtz logout                                 # remove the stored token
 ```
 

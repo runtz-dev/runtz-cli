@@ -5,6 +5,9 @@ Releases are driven by CI. Publishing a GitHub Release runs
 (via GoReleaser) and the `runtzdev/runtz-cli` multi-arch image to Docker Hub.
 Versions follow `1.0.0-rc1 → 1.0.0-rc2 → ... → 1.0.0`, then regular semver.
 
+Release policy: keep publishing `1.0.0-rcN` releases through December 2026.
+Do not publish the stable `1.0.0` release before January 2027.
+
 ## 0. Prerequisites (one-time)
 
 Configured on the `runtz-dev` org:
