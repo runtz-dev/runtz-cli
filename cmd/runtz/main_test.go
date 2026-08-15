@@ -35,6 +35,12 @@ func TestEnforceThresholds(t *testing.T) {
 	}
 }
 
+func TestWindowsHostScanningError(t *testing.T) {
+	if got := errHostScanningUnsupported.Error(); got != "Host scanning is not supported on Windows" {
+		t.Fatalf("Windows host scanning error = %q", got)
+	}
+}
+
 // clearAuthEnv detaches the test from any token/endpoint in the caller's
 // environment and points the config file at an empty temp dir.
 func clearAuthEnv(t *testing.T) {

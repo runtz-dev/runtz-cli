@@ -5,6 +5,14 @@ All notable changes to the runtz CLI are documented here. Versions follow
 (Releases rc4–rc7 were tagged without changelog entries; see the GitHub
 release notes for those.)
 
+## [Unreleased]
+
+### Fixed
+
+- `runtz host` on Windows now exits with the clear message
+  `Host scanning is not supported on Windows` instead of attempting to read
+  Linux's `/etc/os-release`.
+
 ## [1.0.0-rc8]
 
 ### Added
