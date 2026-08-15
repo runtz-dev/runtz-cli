@@ -7,6 +7,8 @@ release notes for those.)
 
 ## [Unreleased]
 
+## [1.0.0-rc10]
+
 ### Fixed
 
 - `runtz host` on Windows now exits with the clear message
