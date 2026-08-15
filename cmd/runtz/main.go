@@ -27,6 +27,11 @@ import (
 // maps it to exit code 3 so CI pipelines can break on it.
 var errThresholdBreached = errors.New("severity threshold exceeded")
 
+// errHostScanningUnsupported is handled separately in main so Windows users
+// get a direct, actionable message instead of the generic command-failed
+// wrapper.
+var errHostScanningUnsupported = errors.New("Host scanning is not supported on Windows")
+
 const saasEndpoint = "https://engine.runtz.dev"
 
 type authOptions struct {
@@ -49,8 +54,12 @@ func main() {
 		printBanner()
 		err = runSAST(os.Args[2:])
 	case "host":
-		printBanner()
-		err = runHost(os.Args[2:])
+		if runtime.GOOS == "windows" {
+			err = errHostScanningUnsupported
+		} else {
+			printBanner()
+			err = runHost(os.Args[2:])
+		}
 	case "container":
 		printBanner()
 		err = runContainer(os.Args[2:])
@@ -81,6 +90,9 @@ func main() {
 	}
 	if err != nil {
 		switch {
+		case errors.Is(err, errHostScanningUnsupported):
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
 		case errors.Is(err, errThresholdBreached), errors.Is(err, update.ErrUpdateAvailable):
 			// The command already explained itself; exit 3 to break CI without
 			// the generic "failed" prefix.
