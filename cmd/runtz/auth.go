@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,28 @@ import (
 	"github.com/runtz-dev/runtz-cli/internal/config"
 	"github.com/runtz-dev/runtz-cli/internal/runtzclient"
 )
+
+type whoamiStatus struct {
+	Authenticated bool             `json:"authenticated"`
+	Verified      bool             `json:"verified"`
+	Workspace     *whoamiWorkspace `json:"workspace,omitempty"`
+	APIKey        *whoamiAPIKey    `json:"apiKey,omitempty"`
+	Endpoint      string           `json:"endpoint"`
+	TokenSource   string           `json:"tokenSource,omitempty"`
+}
+
+type whoamiWorkspace struct {
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name"`
+}
+
+type whoamiAPIKey struct {
+	Name      string `json:"name,omitempty"`
+	Prefix    string `json:"prefix,omitempty"`
+	ExpiresAt string `json:"expiresAt,omitempty"`
+}
+
+type keyVerifier func(context.Context, string, string) (runtzclient.VerifyKeyResult, error)
 
 // runLogin stores a platform token (and, for self-hosted, the endpoint) in
 // the user config file so scan commands no longer need --token. The token is
@@ -108,8 +131,15 @@ func runLogout(args []string) error {
 }
 
 func runWhoami(args []string) error {
+	return runWhoamiWithVerifier(args, func(ctx context.Context, endpoint, token string) (runtzclient.VerifyKeyResult, error) {
+		return runtzclient.New(endpoint, token).VerifyKey(ctx)
+	})
+}
+
+func runWhoamiWithVerifier(args []string, verify keyVerifier) error {
 	var auth authOptions
 	flags := commandFlagSet("whoami", whoamiHelp)
+	jsonOutput := flags.Bool("json", false, "Print machine-readable JSON")
 	addAuthFlags(flags, &auth)
 	if help, err := parseFlags(flags, args); help || err != nil {
 		return err
@@ -120,27 +150,54 @@ func runWhoami(args []string) error {
 		return err
 	}
 	if auth.Token == "" {
+		if *jsonOutput {
+			return writeWhoamiJSON(whoamiStatus{Endpoint: auth.Endpoint})
+		}
 		return fmt.Errorf("not logged in: run `runtz login`, pass --token, or set RUNTZ_TOKEN")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	client := runtzclient.New(auth.Endpoint, auth.Token)
-	result, err := client.VerifyKey(ctx)
+	result, err := verify(ctx, auth.Endpoint, auth.Token)
+	status := whoamiStatus{
+		Authenticated: true,
+		Endpoint:      auth.Endpoint,
+		TokenSource:   source,
+	}
 	switch {
 	case err == nil:
+		status.Verified = true
+		status.Workspace = &whoamiWorkspace{ID: result.Workspace.ID, Name: result.Workspace.Name}
+		status.APIKey = &whoamiAPIKey{
+			Name:      result.APIKey.Name,
+			Prefix:    result.APIKey.Prefix,
+			ExpiresAt: result.APIKey.ExpiresAt,
+		}
+		if *jsonOutput {
+			return writeWhoamiJSON(status)
+		}
 		fmt.Printf("Workspace:  %s\n", result.Workspace.Name)
 		if detail := keyDetail(result.APIKey.Name, result.APIKey.Prefix, result.APIKey.ExpiresAt); detail != "" {
 			fmt.Printf("Key:        %s\n", detail)
 		}
 	case errors.Is(err, runtzclient.ErrVerifyUnsupported):
+		if *jsonOutput {
+			return writeWhoamiJSON(status)
+		}
 		fmt.Fprintf(os.Stderr, "warning: %s does not support token verification (older engine); showing local configuration only.\n", auth.Endpoint)
 	default:
 		return err
 	}
 	fmt.Printf("Endpoint:   %s\n", auth.Endpoint)
 	fmt.Printf("Token from: %s\n", source)
+	return nil
+}
+
+func writeWhoamiJSON(status whoamiStatus) error {
+	if err := json.NewEncoder(os.Stdout).Encode(status); err != nil {
+		return fmt.Errorf("encode login status: %w", err)
+	}
 	return nil
 }
 
@@ -235,6 +292,7 @@ Shows which workspace the current token belongs to and where the token comes
 from (--token flag, environment variable or stored login).
 
 Flags:
+  --json       Print machine-readable JSON for integrations
   --token      Check a specific token instead of the configured one
   --endpoint   Runtz backend endpoint (optional, defaults to Runtz SaaS: %s)
 `, saasEndpoint)

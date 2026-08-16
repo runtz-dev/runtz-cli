@@ -1,13 +1,18 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/runtz-dev/runtz-cli/internal/config"
 	"github.com/runtz-dev/runtz-cli/internal/gate"
 	"github.com/runtz-dev/runtz-cli/internal/report"
+	"github.com/runtz-dev/runtz-cli/internal/runtzclient"
 	"github.com/runtz-dev/runtz-cli/internal/sca"
 )
 
@@ -129,6 +134,98 @@ func TestRequireAuthPointsToLogin(t *testing.T) {
 	if auth.Token != "legacy-token" {
 		t.Fatalf("token = %q, want legacy-token", auth.Token)
 	}
+}
+
+func TestWhoamiJSONReportsLoggedOutWithoutFailing(t *testing.T) {
+	clearAuthEnv(t)
+
+	output, err := captureStdout(t, func() error {
+		return runWhoami([]string{"--json"})
+	})
+	if err != nil {
+		t.Fatalf("runWhoami returned %v", err)
+	}
+
+	var status whoamiStatus
+	if err := json.Unmarshal([]byte(output), &status); err != nil {
+		t.Fatalf("decode whoami JSON %q: %v", output, err)
+	}
+	if status.Authenticated || status.Verified {
+		t.Fatalf("logged-out status = %+v", status)
+	}
+	if status.Endpoint != saasEndpoint {
+		t.Fatalf("endpoint = %q, want %q", status.Endpoint, saasEndpoint)
+	}
+}
+
+func TestWhoamiJSONReportsVerifiedStoredLoginWithoutToken(t *testing.T) {
+	clearAuthEnv(t)
+	token := "stored-secret-token"
+	endpoint := "http://stored:8080"
+	if _, err := config.Save(config.Config{Endpoint: endpoint, Token: token}); err != nil {
+		t.Fatalf("Save returned %v", err)
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runWhoamiWithVerifier([]string{"--json"}, func(_ context.Context, gotEndpoint, gotToken string) (runtzclient.VerifyKeyResult, error) {
+			if gotEndpoint != endpoint || gotToken != token {
+				t.Fatalf("verifier got endpoint=%q token=%q", gotEndpoint, gotToken)
+			}
+			var result runtzclient.VerifyKeyResult
+			result.Workspace.ID = "ws-1"
+			result.Workspace.Name = "Example"
+			result.APIKey.Name = "VS Code"
+			result.APIKey.Prefix = "rtz_live_test"
+			result.APIKey.ExpiresAt = "2030-01-01T00:00:00Z"
+			return result, nil
+		})
+	})
+	if err != nil {
+		t.Fatalf("runWhoami returned %v", err)
+	}
+	if strings.Contains(output, token) {
+		t.Fatal("whoami JSON exposed the token")
+	}
+
+	var status whoamiStatus
+	if err := json.Unmarshal([]byte(output), &status); err != nil {
+		t.Fatalf("decode whoami JSON %q: %v", output, err)
+	}
+	if !status.Authenticated || !status.Verified {
+		t.Fatalf("authenticated status = %+v", status)
+	}
+	if status.Workspace == nil || status.Workspace.ID != "ws-1" || status.Workspace.Name != "Example" {
+		t.Fatalf("workspace = %+v", status.Workspace)
+	}
+	if status.Endpoint != endpoint || !strings.HasPrefix(status.TokenSource, "stored login (") {
+		t.Fatalf("login metadata = %+v", status)
+	}
+}
+
+func captureStdout(t *testing.T, run func() error) (string, error) {
+	t.Helper()
+	previous := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe returned %v", err)
+	}
+	os.Stdout = writer
+	defer func() {
+		os.Stdout = previous
+	}()
+
+	runErr := run()
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close stdout writer: %v", err)
+	}
+	data, readErr := io.ReadAll(reader)
+	if err := reader.Close(); err != nil {
+		t.Fatalf("close stdout reader: %v", err)
+	}
+	if readErr != nil {
+		t.Fatalf("read stdout: %v", readErr)
+	}
+	return string(data), runErr
 }
 
 func TestSeverityExtractors(t *testing.T) {
