@@ -7,6 +7,13 @@ release notes for those.)
 
 ## [Unreleased]
 
+## [1.0.0-rc12]
+
+### Fixed
+
+- `install.sh` no longer prints the expected GitHub `404` while falling back
+  from a missing stable release to the newest prerelease.
+
 ## [1.0.0-rc11]
 
 ### Added

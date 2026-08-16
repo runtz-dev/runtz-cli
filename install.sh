@@ -91,7 +91,9 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 info "Downloading runtz (${OS}/${ARCH}, ${VERSION})..."
-if ! fetch "${RELEASE_URL}/${ASSET}" "${TMP_DIR}/${BINARY}"; then
+# A missing stable release is expected while only prereleases exist. Keep that
+# probe quiet; the fallback download below still reports real failures.
+if ! fetch "${RELEASE_URL}/${ASSET}" "${TMP_DIR}/${BINARY}" 2>/dev/null; then
   if [ "$VERSION" = "latest" ]; then
     TAG="$(resolve_newest_tag)"
     [ -n "$TAG" ] || fail "download failed: ${RELEASE_URL}/${ASSET}"
