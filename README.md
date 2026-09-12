@@ -1,13 +1,13 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://runtz.dev/home/brand/runtz-logo-dark.svg">
-  <img src="https://runtz.dev/home/brand/runtz-logo-light.svg" alt="runtz" width="220">
+  <source media="(prefers-color-scheme: dark)" srcset="https://runtz.dev/brand/runtz-logo-dark.svg">
+  <img src="https://runtz.dev/brand/runtz-logo-light.svg" alt="runtz" width="220">
 </picture>
 
 # runtz-cli
 
 [![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-blue.svg)](LICENSE)
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-runtzdev-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/runtzdev/runtz-cli)
-[![Docs](https://img.shields.io/badge/Docs-runtz.dev-2f7eff)](https://runtz.dev/home/docs)
+[![Docs](https://img.shields.io/badge/Docs-runtz.dev-2f7eff)](https://runtz.dev/docs)
 
 `runtz` is the DevSecOps scanner CLI for the [runtz platform](https://github.com/runtz-dev/runtz).
 It runs SCA, SAST, host, container and Kubernetes scans and sends the results to
