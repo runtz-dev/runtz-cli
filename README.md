@@ -46,6 +46,11 @@ runtz update --yes    # no prompt (automation)
 runtz update --check  # only report if a newer version exists (exit 3 if so)
 ```
 
+If the binary lives in a root-owned directory such as `/usr/local/bin`,
+`runtz update` retries the install through `sudo` and asks for your password,
+so you don't need to run `sudo runtz update`. Without a terminal (CI,
+scripts) it fails with a hint instead of prompting.
+
 ## Log in once
 
 `runtz login` verifies a workspace token (generated in the platform) and stores

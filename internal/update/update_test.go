@@ -6,6 +6,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -98,5 +101,55 @@ func TestRunCheckOnly(t *testing.T) {
 	}, srv.URL+"/repos/x/y/releases")
 	if !errors.Is(err, ErrUpdateAvailable) {
 		t.Fatalf("outdated check returned %v, want ErrUpdateAvailable", err)
+	}
+}
+
+func TestSudoInstallReplacesTarget(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sudo install is Unix-only")
+	}
+	// Run the install script as the current user instead of through sudo.
+	defer func(prev []string) { sudoPrefix = prev }(sudoPrefix)
+	sudoPrefix = nil
+
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "runtz")
+	if err := os.WriteFile(exe, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if err := sudoInstall([]byte("new"), exe, Options{Stdout: &out, Stderr: &out, Stdin: strings.NewReader("")}); err != nil {
+		t.Fatalf("sudoInstall: %v (%s)", err, out.String())
+	}
+	got, err := os.ReadFile(exe)
+	if err != nil || string(got) != "new" {
+		t.Fatalf("target = %q, %v; want new", got, err)
+	}
+	if info, _ := os.Stat(exe); info.Mode().Perm() != 0o755 {
+		t.Fatalf("mode = %v, want 0755", info.Mode().Perm())
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".runtz-update-new")); !os.IsNotExist(err) {
+		t.Fatalf("staged file left behind: %v", err)
+	}
+}
+
+func TestSudoInstallFailureReturnsError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sudo install is Unix-only")
+	}
+	defer func(prev []string) { sudoPrefix = prev }(sudoPrefix)
+	sudoPrefix = nil
+
+	exe := filepath.Join(t.TempDir(), "missing", "runtz")
+	var out bytes.Buffer
+	if err := sudoInstall([]byte("new"), exe, Options{Stdout: &out, Stderr: &out, Stdin: strings.NewReader("")}); err == nil {
+		t.Fatal("sudoInstall into a missing dir succeeded, want error")
+	}
+}
+
+func TestCanSudoNeedsTerminal(t *testing.T) {
+	if canSudo(strings.NewReader("y\n")) {
+		t.Fatal("canSudo = true for non-terminal stdin, want false")
 	}
 }
