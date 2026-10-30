@@ -745,10 +745,12 @@ Examples:
 
 The host scanner always inventories the current host. On Linux it reads
 /etc/os-release, detects the distribution family and lists installed packages
-from the matching package database, then queries OSV for package CVEs. On
-macOS it reads the OS version via sw_vers and lists installed Homebrew
-formulae and casks (OSV has no advisory feed for Homebrew yet, so the
-inventory is sent without CVE matching).
+from the matching package database, then queries OSV for package CVEs. When
+several kernels are installed side by side (dpkg/rpm), only the running one
+(uname -r) is matched; older or not-yet-booted kernels stay in the inventory
+without CVEs. On macOS it reads the OS version via sw_vers and lists
+installed Homebrew formulae and casks (OSV has no advisory feed for Homebrew
+yet, so the inventory is sent without CVE matching).
 
 Supported families:
   Debian/Ubuntu based   dpkg    (Debian, Ubuntu, Mint, ...)

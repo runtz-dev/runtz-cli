@@ -44,7 +44,10 @@ func RunHost(ctx context.Context, options HostOptions) (Result, error) {
 	if ecosystemForOS(osRelease) == "" {
 		reportProgress(options.Progress, "OSV has no advisory feed for %s yet; sending the package inventory without CVE matching.", osDisplayName(osRelease))
 	} else {
-		vulnerabilities, err = findVulnerabilities(ctx, packages, osRelease, options.OSVBaseURL, options.Progress)
+		matchPackages, kernels := selectRunningKernel(packages, family, runningKernelRelease())
+		reportKernelSelection(options.Progress, kernels)
+
+		vulnerabilities, err = findVulnerabilities(ctx, matchPackages, osRelease, options.OSVBaseURL, options.Progress)
 		if err != nil {
 			return Result{}, fmt.Errorf("scan package vulnerabilities: %w", err)
 		}
