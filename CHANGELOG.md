@@ -7,6 +7,21 @@ release notes for those.)
 
 ## [Unreleased]
 
+## [1.0.0-rc13]
+
+### Fixed
+
+- `runtz host` matches kernel CVEs against the running kernel (`uname -r`)
+  only. Kernels that are installed but not running (old ones waiting for
+  `apt autoremove`, or a newer one waiting for a reboot) stay in the package
+  inventory without CVEs, so removing them no longer makes hundreds of
+  "fixable" CVEs disappear from the Hosts dashboard. The CLI lists the
+  skipped kernels and says when a newer kernel needs a reboot. Covers
+  Debian/Ubuntu and RPM (RHEL, Rocky, Alma, SUSE) hosts.
+- Host and container scans follow OSV pagination. Packages with more than
+  1000 advisories (the Ubuntu kernel has about 3500) were cut off at the
+  first 1000 without notice.
+
 ## [1.0.0-rc12]
 
 ### Fixed

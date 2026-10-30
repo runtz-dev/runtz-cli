@@ -14,6 +14,11 @@ import (
 
 const defaultOSVBaseURL = "https://api.osv.dev"
 
+// maxOSVQueryPages bounds how far one package query follows next_page_token.
+// The kernel needs a handful of pages; the cap only stops a mirror that never
+// ends pagination from running the scan into its timeout.
+const maxOSVQueryPages = 50
+
 type osvClient struct {
 	baseURL    string
 	httpClient *http.Client
@@ -26,8 +31,9 @@ type osvBatchRequest struct {
 }
 
 type osvQuery struct {
-	Version string     `json:"version"`
-	Package osvPackage `json:"package"`
+	Version   string     `json:"version"`
+	Package   osvPackage `json:"package"`
+	PageToken string     `json:"page_token,omitempty"`
 }
 
 type osvPackage struct {
@@ -40,7 +46,8 @@ type osvBatchResponse struct {
 }
 
 type osvQueryResult struct {
-	Vulns []osvVulnerability `json:"vulns"`
+	Vulns         []osvVulnerability `json:"vulns"`
+	NextPageToken string             `json:"next_page_token"`
 }
 
 type osvVulnerability struct {
@@ -206,9 +213,9 @@ func (c *osvClient) queryBatchMatchesConcurrently(ctx context.Context, ecosystem
 }
 
 func (c *osvClient) queryBatchMatches(ctx context.Context, ecosystem string, sourcePackages []sourcePackage) ([]osvMatch, error) {
-	requestPayload := osvBatchRequest{Queries: make([]osvQuery, 0, len(sourcePackages))}
+	queries := make([]osvQuery, 0, len(sourcePackages))
 	for _, pkg := range sourcePackages {
-		requestPayload.Queries = append(requestPayload.Queries, osvQuery{
+		queries = append(queries, osvQuery{
 			Version: pkg.Version,
 			Package: osvPackage{
 				Name:      pkg.Name,
@@ -217,7 +224,51 @@ func (c *osvClient) queryBatchMatches(ctx context.Context, ecosystem string, sou
 		})
 	}
 
-	body, err := json.Marshal(requestPayload)
+	// OSV returns at most 1000 advisories per query plus a next_page_token
+	// for the rest (the Ubuntu kernel alone has several thousand), so queries
+	// are re-sent with their token until none is left.
+	pending := make([]int, len(queries))
+	for index := range pending {
+		pending[index] = index
+	}
+
+	matches := make([]osvMatch, 0)
+	for page := 1; len(pending) > 0; page++ {
+		if page > maxOSVQueryPages {
+			return nil, fmt.Errorf("osv still paginating %s after %d pages", sourcePackages[pending[0]].Name, maxOSVQueryPages)
+		}
+
+		batch := make([]osvQuery, 0, len(pending))
+		for _, index := range pending {
+			batch = append(batch, queries[index])
+		}
+		results, err := c.postQueryBatch(ctx, batch)
+		if err != nil {
+			return nil, err
+		}
+
+		var next []int
+		for position, queryResult := range results {
+			if position >= len(pending) {
+				break
+			}
+			index := pending[position]
+			for _, vulnSummary := range queryResult.Vulns {
+				matches = append(matches, osvMatch{sourcePackage: sourcePackages[index], vulnID: vulnSummary.ID})
+			}
+			if queryResult.NextPageToken != "" {
+				queries[index].PageToken = queryResult.NextPageToken
+				next = append(next, index)
+			}
+		}
+		pending = next
+	}
+
+	return matches, nil
+}
+
+func (c *osvClient) postQueryBatch(ctx context.Context, queries []osvQuery) ([]osvQueryResult, error) {
+	body, err := json.Marshal(osvBatchRequest{Queries: queries})
 	if err != nil {
 		return nil, fmt.Errorf("encode osv request: %w", err)
 	}
@@ -246,18 +297,7 @@ func (c *osvClient) queryBatchMatches(ctx context.Context, ecosystem string, sou
 		return nil, fmt.Errorf("decode osv response: %w", err)
 	}
 
-	matches := make([]osvMatch, 0)
-	for index, queryResult := range responsePayload.Results {
-		if index >= len(sourcePackages) {
-			break
-		}
-		pkg := sourcePackages[index]
-		for _, vulnSummary := range queryResult.Vulns {
-			matches = append(matches, osvMatch{sourcePackage: pkg, vulnID: vulnSummary.ID})
-		}
-	}
-
-	return matches, nil
+	return responsePayload.Results, nil
 }
 
 func (c *osvClient) fetchVulnerabilityDetails(ctx context.Context, ids []string) (map[string]osvVulnerability, error) {

@@ -87,7 +87,8 @@ runtz k8s
   Ruby, PHP, Rust, C#/.NET) against GitHub Global Security Advisories.
 - **sast** — source code rules for committed secrets, dynamic code execution,
   disabled TLS verification and weak hashing.
-- **host** — installed OS packages (dpkg/rpm/apk) matched against OSV.
+- **host** — installed OS packages (dpkg/rpm/apk) matched against OSV. With
+  several kernels installed, only the running one is matched.
 - **container** — OS packages inside an image (pulled without Docker, or `--local`).
 - **k8s** — a live cluster (current kubectl context) or manifests (positional path).
 
