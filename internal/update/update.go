@@ -1,7 +1,8 @@
 // Package update implements the `runtz update` self-updater. It resolves the
 // newest release of the CLI on GitHub, and (with confirmation) downloads the
 // matching binary, verifies its SHA-256 against the release checksums file and
-// atomically replaces the running executable.
+// atomically replaces the running executable, going through sudo when the
+// install directory is root-owned.
 package update
 
 import (
@@ -14,10 +15,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // DefaultRepo is the GitHub repository the CLI updates from.
@@ -124,12 +128,14 @@ func download(ctx context.Context, opts Options, tag string) error {
 		return fmt.Errorf("checksum mismatch for %s: got %s, want %s", asset, got, want)
 	}
 
-	return replaceExecutable(binaryData, opts.Stdout)
+	return replaceExecutable(binaryData, opts)
 }
 
-// replaceExecutable atomically swaps the running binary for newData by writing
-// a sibling temp file and renaming it over the original.
-func replaceExecutable(newData []byte, stdout io.Writer) error {
+// replaceExecutable swaps the running binary for newData. When the install
+// directory is not writable (e.g. /usr/local/bin) and a terminal is attached,
+// it retries through sudo so the user only types their password instead of
+// re-running `sudo runtz update`.
+func replaceExecutable(newData []byte, opts Options) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate current executable: %w", err)
@@ -140,29 +146,92 @@ func replaceExecutable(newData []byte, stdout io.Writer) error {
 	}
 
 	dir := filepath.Dir(exe)
-	tmp, err := os.CreateTemp(dir, ".runtz-update-*")
-	if err != nil {
-		return permissionHint(dir, err)
+	if err := renameOver(newData, exe); err != nil {
+		if !errors.Is(err, os.ErrPermission) || !canSudo(opts.Stdin) {
+			return permissionHint(dir, err)
+		}
+		fmt.Fprintf(opts.Stdout, "No write access to %s; retrying with sudo.\n", dir)
+		if err := sudoInstall(newData, exe, opts); err != nil {
+			return fmt.Errorf("install with sudo: %w", err)
+		}
 	}
-	tmpName := tmp.Name()
+
+	fmt.Fprintf(opts.Stdout, "Updated runtz at %s\n", exe)
+	return nil
+}
+
+// renameOver atomically swaps exe for newData by writing a sibling temp file
+// and renaming it over the original.
+func renameOver(newData []byte, exe string) error {
+	tmpName, err := writeTemp(filepath.Dir(exe), newData)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpName)
+	return os.Rename(tmpName, exe)
+}
+
+// sudoPrefix runs sudoInstallScript with root privileges; tests clear it to run
+// the script as the current user.
+var sudoPrefix = []string{"sudo"}
+
+// sudoInstallScript copies $1 next to the target as $2 (root-owned, 0755) and
+// renames it over $3, so the swap stays atomic. Paths are positional
+// parameters, never parsed as shell.
+const sudoInstallScript = `install -m 0755 "$1" "$2" && mv -f "$2" "$3" || { rm -f "$2"; exit 1; }`
+
+// sudoInstall stages newData in the user's temp dir and has sudo move it into
+// place. sudo asks for the password on the terminal itself.
+func sudoInstall(newData []byte, exe string, opts Options) error {
+	tmpName, err := writeTemp("", newData)
+	if err != nil {
+		return err
+	}
 	defer os.Remove(tmpName)
 
-	if _, err := tmp.Write(newData); err != nil {
+	staged := filepath.Join(filepath.Dir(exe), ".runtz-update-new")
+	args := append(append([]string{}, sudoPrefix...), "sh", "-c", sudoInstallScript, "sh", tmpName, staged, exe)
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = opts.Stdin, opts.Stdout, opts.Stderr
+	return cmd.Run()
+}
+
+// canSudo reports whether a permission failure can be retried through sudo: a
+// non-root Unix user with sudo installed and a terminal for the password
+// prompt. Non-interactive runs (CI, `--yes` in scripts) keep the plain error.
+func canSudo(stdin io.Reader) bool {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		return false
+	}
+	f, ok := stdin.(*os.File)
+	if !ok || !term.IsTerminal(int(f.Fd())) {
+		return false
+	}
+	_, err := exec.LookPath("sudo")
+	return err == nil
+}
+
+// writeTemp writes data to a new 0755 temp file in dir ("" for the system temp
+// dir) and returns its path. The caller removes it.
+func writeTemp(dir string, data []byte) (string, error) {
+	tmp, err := os.CreateTemp(dir, ".runtz-update-*")
+	if err != nil {
+		return "", err
+	}
+	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
-		return err
+		os.Remove(tmp.Name())
+		return "", err
 	}
 	if err := tmp.Close(); err != nil {
-		return err
+		os.Remove(tmp.Name())
+		return "", err
 	}
-	if err := os.Chmod(tmpName, 0o755); err != nil {
-		return err
+	if err := os.Chmod(tmp.Name(), 0o755); err != nil {
+		os.Remove(tmp.Name())
+		return "", err
 	}
-	if err := os.Rename(tmpName, exe); err != nil {
-		return permissionHint(dir, err)
-	}
-
-	fmt.Fprintf(stdout, "Updated runtz at %s\n", exe)
-	return nil
+	return tmp.Name(), nil
 }
 
 func permissionHint(dir string, err error) error {

@@ -7,6 +7,16 @@ release notes for those.)
 
 ## [Unreleased]
 
+## [1.0.0-rc14]
+
+### Changed
+
+- `runtz update` no longer fails with `permission denied` when the binary is
+  installed in a root-owned directory such as `/usr/local/bin`. After you
+  confirm the update, it retries the install through `sudo` and asks for your
+  password. The swap stays atomic. Runs without a terminal keep the previous
+  error and hint.
+
 ## [1.0.0-rc13]
 
 ### Fixed
