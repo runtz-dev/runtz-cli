@@ -7,6 +7,28 @@ release notes for those.)
 
 ## [Unreleased]
 
+## [1.0.0-rc15]
+
+### Added
+
+- `runtz gcp`, `runtz aws` and `runtz azure` run read-only cloud scans through
+  the public Runtz Security API and upload evaluated results to the workspace.
+  Check implementations remain in Security and update independently of the CLI.
+- Each cloud command has a `config` subcommand and guided first-run setup.
+  Configuration uses the existing owner-only Runtz config file and preserves
+  login and other provider settings. Secrets are hidden at prompts.
+- Cloud commands support the standard severity gates, provider secret environment
+  variables for CI, and `--security-endpoint` / `RUNTZ_SECURITY_ENDPOINT` for
+  self-hosted installations. Hosted development and production endpoints remain
+  separate, with workspace-token verification in both services.
+
+### Requirements
+
+- Cloud commands require the matching Security deployment with `/v1/cli/*`
+  endpoints and an engine with cloud-result ingestion. Credentials are sent
+  over HTTPS for request-scoped validation and scanning. Existing SCA, SAST,
+  host, container and Kubernetes scan commands keep their current behavior.
+
 ## [1.0.0-rc14]
 
 ### Changed

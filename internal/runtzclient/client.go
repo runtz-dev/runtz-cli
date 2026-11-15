@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/runtz-dev/runtz-cli/internal/cloudclient"
 	"github.com/runtz-dev/runtz-cli/internal/pkgscan"
 	"github.com/runtz-dev/runtz-cli/internal/report"
 	"github.com/runtz-dev/runtz-cli/internal/sca"
@@ -223,4 +224,13 @@ func (c *Client) send(ctx context.Context, path string, payload any) (string, er
 	}
 
 	return "", nil
+}
+
+// SendCloud sends evaluated checks, never cloud credentials or raw inventory.
+// It returns the cloud connection ID used by the platform result URL.
+func (c *Client) SendCloud(ctx context.Context, name string, result cloudclient.Result) (string, error) {
+	return c.send(ctx, "/api/v1/ingest/cloud", struct {
+		Name   string             `json:"name"`
+		Result cloudclient.Result `json:"result"`
+	}{name, result})
 }
