@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 )
@@ -14,7 +15,7 @@ func TestLoadMissingFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load with no file returned %v, want nil", err)
 	}
-	if cfg != (Config{}) {
+	if !reflect.DeepEqual(cfg, Config{}) {
 		t.Fatalf("Load with no file returned %+v, want zero Config", cfg)
 	}
 }
@@ -32,7 +33,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned %v", err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load = %+v, want %+v", got, want)
 	}
 
@@ -103,5 +104,28 @@ func TestPathHonorsOverrideDir(t *testing.T) {
 	}
 	if want := filepath.Join(dir, "config.json"); path != want {
 		t.Fatalf("Path = %q, want %q", path, want)
+	}
+}
+
+func TestLogoutPreservesCloudConfigurations(t *testing.T) {
+	t.Setenv("RUNTZ_CONFIG_DIR", t.TempDir())
+	clouds := map[string]Cloud{"gcp": {Scope: "test-project", CredentialsFile: "/keys/key.json"}, "azure": {Scope: "subscription", TenantID: "tenant"}}
+	if _, err := Save(Config{Token: "test-token", Clouds: clouds}); err != nil {
+		t.Fatal(err)
+	}
+	if existed, err := ClearToken(); err != nil || !existed {
+		t.Fatal("could not clear login")
+	}
+	cfg, err := Load()
+	if err != nil || cfg.Token != "" || !reflect.DeepEqual(cfg.Clouds, clouds) {
+		t.Fatal("logout modified cloud configurations")
+	}
+	cfg.Token = "replacement-token"
+	if _, err := Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load()
+	if err != nil || !reflect.DeepEqual(cfg.Clouds, clouds) {
+		t.Fatal("login replacement modified cloud configurations")
 	}
 }

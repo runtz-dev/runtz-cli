@@ -155,3 +155,70 @@ contact licensing@runtz.dev.
 ---
 
 Copyright © 2026 Runtz · RAW DEVOPS LTDA (CNPJ 51.460.107/0001-53). All rights reserved.
+
+## Cloud scanning
+
+Run Runtz-owned, read-only GCP, AWS and Azure checks through the public
+Runtz Security API. The CLI sends cloud credentials over HTTPS for validation
+and scanning. This request-scoped API does not store those credentials; the CLI
+then uploads checks, findings and coverage to your workspace.
+
+```sh
+runtz login
+runtz gcp config
+runtz gcp
+# Or: runtz aws config / runtz aws
+# Or: runtz azure config / runtz azure
+```
+
+The first interactive provider command opens setup if needed, then scans.
+`config` by itself validates and saves without scanning. GCP asks for a project
+ID and JSON key path; AWS asks for the account ID, IAM user access key, secret
+and regions; Azure asks for the subscription, tenant ID, client ID and secret
+value. Secrets are hidden at prompts. Existing login and other cloud configs
+are preserved, including when running `runtz logout`.
+
+On Linux, configuration is `~/.config/runtz/config.json` (`0700` directory,
+`0600` file). macOS and Windows use `os.UserConfigDir()`. `RUNTZ_CONFIG_DIR`
+overrides it. GCP stores an absolute key-file path, not a copy of the key.
+AWS and Azure credentials are saved with owner-only permissions.
+
+CI does not open prompts. Supply the provider's required flags and secret env vars:
+
+```sh
+# GCP: GOOGLE_APPLICATION_CREDENTIALS and RUNTZ_TOKEN from the CI secret manager
+runtz gcp --project-id YOUR_PROJECT_ID
+# AWS: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and RUNTZ_TOKEN
+runtz aws --account-id YOUR_ACCOUNT_ID --regions us-east-1,sa-east-1
+# Azure: AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET and RUNTZ_TOKEN
+runtz azure --subscription-id YOUR_SUBSCRIPTION_ID
+```
+
+Provider CLIs are only needed for optional setup instructions. The private Security collectors call
+provider APIs and support the standard severity thresholds. Results are
+uploaded before an enabled gate returns `3`. Missing permissions remain skipped
+or errored checks, never passes. CLI results appear under **Cloud** with a CLI
+source. Rerun locally or schedule in CI for new results. A scope already connected
+through the site must be disconnected before switching to CLI mode.
+
+Guides: [GCP](https://runtz.dev/docs/scans/google-cloud),
+[AWS](https://runtz.dev/docs/scans/aws), [Azure](https://runtz.dev/docs/scans/azure).
+
+### Security endpoint and check updates
+
+Hosted commands use `https://security.runtz.dev`. An engine endpoint of
+`https://engine-dev.runtz.dev` selects `https://security-dev.runtz.dev`.
+The workspace API token is verified by Security against its configured engine;
+the CLI checks that both services identify the same workspace.
+
+For self-hosting, pass `--security-endpoint https://security.example.com` during
+`config` to save it, or set `RUNTZ_SECURITY_ENDPOINT`. Explicit flag, environment,
+then saved config determine the URL. HTTPS is required except for loopback HTTP
+in local development. Security must set `RUNTZ_SECURITY_ENGINE_URL` to the same
+engine as `--endpoint`; old engines without token verification are unsupported
+for cloud scanning. The CLI never receives the internal Security service key.
+
+The scan response streams heartbeats until completion. Disconnects/timeouts
+require retrying the command. A new check requires deploying Security, with no
+CLI update for compatible API changes. The CLI contains transport/result types,
+not a snapshot of private collectors or rule implementations.

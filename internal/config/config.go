@@ -16,8 +16,24 @@ import (
 type Config struct {
 	// Endpoint is only stored for self-hosted deployments; empty means the
 	// Runtz SaaS default.
-	Endpoint string `json:"endpoint,omitempty"`
-	Token    string `json:"token,omitempty"`
+	SecurityEndpoint string           `json:"securityEndpoint,omitempty"`
+	Endpoint         string           `json:"endpoint,omitempty"`
+	Token            string           `json:"token,omitempty"`
+	Clouds           map[string]Cloud `json:"clouds,omitempty"`
+}
+
+// Cloud stores local configuration. Credentials are sent to Security per request.
+// GCP keeps a path to the user's key.
+type Cloud struct {
+	Name            string   `json:"name,omitempty"`
+	Scope           string   `json:"scope"`
+	CredentialsFile string   `json:"credentialsFile,omitempty"`
+	AccessKeyID     string   `json:"accessKeyId,omitempty"`
+	SecretAccessKey string   `json:"secretAccessKey,omitempty"`
+	Regions         []string `json:"regions,omitempty"`
+	TenantID        string   `json:"tenantId,omitempty"`
+	ClientID        string   `json:"clientId,omitempty"`
+	ClientSecret    string   `json:"clientSecret,omitempty"`
 }
 
 // Path returns the config file location without touching the filesystem.
@@ -106,7 +122,7 @@ func ClearToken() (bool, error) {
 	if err != nil {
 		return hadToken, err
 	}
-	if cfg.Endpoint == "" {
+	if cfg.Endpoint == "" && cfg.SecurityEndpoint == "" && len(cfg.Clouds) == 0 {
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return hadToken, err
 		}

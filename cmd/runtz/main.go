@@ -66,6 +66,9 @@ func main() {
 	case "k8s", "kubernetes":
 		printBanner()
 		err = runKubernetes(os.Args[2:])
+	case "gcp", "aws", "azure":
+		printBanner()
+		err = runCloud(os.Args[1], os.Args[2:])
 	case "login":
 		printBanner()
 		err = runLogin(os.Args[2:])
@@ -90,6 +93,9 @@ func main() {
 	}
 	if err != nil {
 		switch {
+		case errors.Is(err, errCloudUsage):
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
 		case errors.Is(err, errHostScanningUnsupported):
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -538,6 +544,8 @@ func showCommandHelp(command string) error {
 		containerHelp()
 	case "k8s", "kubernetes":
 		k8sHelp()
+	case "gcp", "aws", "azure":
+		cloudHelp(command)
 	case "login":
 		loginHelp()
 	case "logout":
@@ -624,6 +632,9 @@ Commands:
   host         Scan packages installed on this Linux or macOS host
   k8s          Scan a Kubernetes cluster or manifests
   kubernetes   Alias for k8s
+  gcp          Scan a Google Cloud project (gcp config to configure)
+  aws          Scan an AWS account (aws config to configure)
+  azure        Scan an Azure subscription (azure config to configure)
   login        Store a platform token so scans no longer need --token
   logout       Remove the stored token
   whoami       Show the workspace and source of the current token
